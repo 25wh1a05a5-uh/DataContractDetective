@@ -141,3 +141,45 @@ def test_investigate_hypotheses_handles_multiple_hypotheses():
     )
     assert result["hypotheses"][1]["assessment"] == "inconclusive"
 
+
+def test_investigation_evidence_ledger_records_stale_data():
+    result = run_investigation()
+
+    freshness_entry = next(
+        item
+        for item in result["evidence_ledger"]
+        if item["check"] == "freshness"
+    )
+
+    assert freshness_entry["status"] == "completed"
+    assert freshness_entry["problem_detected"] is True
+    assert "age_hours" in freshness_entry["details"]
+
+
+def test_investigate_with_hypotheses_generates_stale_data_hypothesis():
+    from investigator import investigate_with_hypotheses
+
+    result = investigate_with_hypotheses(
+        data=make_data(),
+        key_columns=["student_id"],
+        timestamp_column="updated_at",
+        max_age_hours=24,
+        expected_schema={
+            "student_id": "int64",
+            "updated_at": "str",
+            "grade": "int64",
+        },
+        now=datetime(
+            2026, 10, 12, 10, 0,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    assert result["conclusion"] == "data_quality_issues_detected"
+    assert any(
+        hypothesis["hypothesis"] == "Stale data"
+        for hypothesis in result["hypotheses"]
+    )
+    assert result["root_cause_confirmed"] is False
+
+

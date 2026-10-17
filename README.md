@@ -1,164 +1,172 @@
-\# DataContract Detective
 
+# 🔎 DataContract Detective
 
-
-\*\*An evidence-driven CSV data quality investigation and replay system.\*\*
-
-
-
-DataContract Detective identifies data quality problems in CSV files, evaluates possible causes, and compares diagnostic results across repeatable investigations.
-
-
+**An Evidence-Driven CSV Data Quality Investigation and Replay System**
 
 > Don't guess the cause. Test the evidence. Then prove it.
 
+DataContract Detective investigates CSV data quality problems, evaluates possible causes using evidence, verifies saved investigation records, and compares diagnostic results across repeatable runs.
 
+## Features
 
-\## Features
+- Duplicate record detection
+- Data freshness checks
+- Schema validation
+- Missing value detection
+- Numeric range validation
+- Evidence-based root-cause hypothesis evaluation
+- SHA-256 input fingerprint verification
+- Repeatable diagnostic execution
+- Original-versus-replay comparison
+- Interactive Streamlit dashboard
+- Automated test coverage for core functionality
 
+## Technology Stack
 
+- Python 3.12
+- pandas
+- Streamlit
+- pytest
+- JSON
+- SHA-256 hashing
 
-\- Duplicate record detection
+## Project Structure
 
-\- Data freshness checks
-
-\- Schema validation
-
-\- Missing value detection
-
-\- Numeric range validation
-
-\- Hypothesis evaluation without automatically claiming an unproven root cause
-
-\- Replay validation using SHA-256 file fingerprints
-
-\- Re-running diagnostics using saved configuration
-
-\- Comparing original and replayed diagnostic results
-
-\- Automated tests for diagnostics, replay validation, and comparison
-
-
-
-\## Technology Stack
-
-
-
-\- Python
-
-\- pandas
-
-\- pytest
-
-\- JSON
-
-\- Markdown
-
-\- SHA-256 hashing
-
-
-
-\## Getting Started
-
-
-
-\### 1. Activate the virtual environment
-
-
-
-```powershell
-
-.\\venv\\Scripts\\Activate.ps1
-
+```text
+DataContractDetective/
+├── app.py
+├── data/
+│   └── quality_test.csv
+├── reports/
+├── src/
+├── tests/
+├── .venv/
+├── .gitignore
+└── README.md
 ```
 
+## Getting Started
 
+### 1. Open the project directory
 
-\### 2. Install dependencies
-
-
-
-```powershell
-
-python -m pip install pandas pytest
-
-```
-
-
-
-\### 3. Run the tests
-
-
+Open a terminal in the project root:
 
 ```powershell
-
-python -m pytest tests -v
-
+cd "C:\Users\Umme Habeeba\DataContractDetective"
 ```
 
-
-
-\*\*Latest test result:\*\* 50 tests passed.
-
-
-
-\## Replay an Investigation
-
-
-
-Example command:
-
-
+### 2. Activate the virtual environment
 
 ```powershell
-
-python -m src.replay\_runner reports\\quality\_test\_replay.json data\\quality\_test.csv
-
+.\.venv\Scripts\Activate.ps1
 ```
 
-
-
-\## Compare Investigation Results
-
-
+Alternatively, run Python directly without activating the environment:
 
 ```powershell
-
-python -m src.replay\_comparison reports\\quality\_test\_investigation.json reports\\quality\_test\_replay\_run.json
-
+.\.venv\Scripts\python.exe --version
 ```
 
+### 3. Install dependencies
 
+If your project has a `requirements.txt` file:
 
-Replace example filenames if your actual filenames differ.
+```powershell
+python -m pip install -r requirements.txt
+```
 
+Otherwise, install the packages used by the project:
 
+```powershell
+python -m pip install pandas streamlit pytest
+```
 
-\## Current Scope
+### 4. Run the automated tests
 
+```powershell
+python -m pytest -v
+```
 
+**Latest recorded test result:** 55 tests passed.
 
-The project currently performs local CSV diagnostics, validates replay records, reruns checks, and compares results. Freshness results can change over time, and diagnostic findings alone do not necessarily prove a root cause.
+Run the tests again after making changes to confirm the current result.
 
+## Launch the Dashboard
 
+Start the Streamlit application:
 
-\## Future Improvements
+```powershell
+python -m streamlit run app.py
+```
 
+Open the local URL shown in the terminal, usually:
 
+```text
+http://localhost:8501
+```
 
-\- Integrate an AI agent to select follow-up diagnostic tests
+Use the sample CSV or upload a CSV file to investigate data quality.
 
-\- Generate evidence-backed investigation summaries
+## Run an Investigation from the Terminal
 
-\- Recommend data-contract rules
+```powershell
+python src/run_investigation.py data/quality_test.csv
+```
 
-\- Build a user-friendly interface
+The investigation generates reports in the `reports/` directory.
 
+## Verify a Saved Replay
 
+```powershell
+python src/verify_replay.py reports/quality_test_replay.json data/quality_test.csv
+```
 
-\## Author
+Replay verification checks whether the current input matches the saved fingerprint.
 
+## Run a Replay
 
+```powershell
+python -m src.replay_runner reports/quality_test_replay.json data/quality_test.csv
+```
+
+## Compare Investigation Results
+
+```powershell
+python -m src.replay_comparison reports/quality_test_investigation.json reports/quality_test_replay_run.json
+```
+
+The comparison identifies changed and unchanged diagnostic results.
+
+Use the report filenames generated by your actual investigation if they differ from these examples.
+
+## Design Principles
+
+### Evidence before conclusions
+
+A hypothesis may have supporting evidence without being a confirmed root cause. Contradicting evidence and missing evidence must also be considered.
+
+### Reproducibility
+
+Saved replay records and SHA-256 fingerprints help verify that the input data has not changed.
+
+### Transparent comparisons
+
+The replay comparison distinguishes changes in diagnostic results from time-sensitive values, such as freshness age.
+
+## Current Scope
+
+The project currently supports local CSV diagnostics, hypothesis evaluation, saved replay validation, diagnostic reruns, and comparison reports.
+
+The system does not guarantee that every underlying pipeline problem can be identified from CSV diagnostics alone.
+
+## Future Improvements
+
+- Add an AI agent that selects useful follow-up diagnostic tests.
+- Improve evidence-backed investigation summaries.
+- Support configurable data-contract rules.
+- Improve dashboard visualizations and reporting.
+- Add more datasets and integration tests.
+
+## Author
 
 Built as a data quality investigation and reproducibility project.
-

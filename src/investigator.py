@@ -136,3 +136,48 @@ def investigate_hypotheses(hypotheses):
             "by this assessment alone."
         ),
     }
+
+
+def investigate_with_hypotheses(
+    data,
+    key_columns,
+    timestamp_column,
+    max_age_hours,
+    expected_schema,
+    now=None,
+):
+    """Run diagnostics and evaluate hypotheses generated from their results."""
+
+    from hypothesis_engine import (
+        evaluate_hypothesis,
+        generate_hypotheses,
+    )
+
+    investigation = investigate(
+        data=data,
+        key_columns=key_columns,
+        timestamp_column=timestamp_column,
+        max_age_hours=max_age_hours,
+        expected_schema=expected_schema,
+        now=now,
+    )
+
+    candidates = generate_hypotheses(investigation["diagnostics"])
+
+    evaluated_hypotheses = [
+        evaluate_hypothesis(
+            name=candidate["name"],
+            supporting_evidence=candidate["supporting_evidence"],
+            contradicting_evidence=candidate["contradicting_evidence"],
+            required_evidence=candidate.get("required_evidence", []),
+        )
+        for candidate in candidates
+    ]
+
+    investigation["hypotheses"] = evaluated_hypotheses
+    investigation["root_cause_confirmed"] = False
+    investigation["hypothesis_conclusion"] = (
+        "No root cause is confirmed by the available diagnostic evidence alone."
+    )
+
+    return investigation

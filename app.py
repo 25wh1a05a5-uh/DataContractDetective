@@ -1,7 +1,4 @@
 
-"""DataContract Detective — Streamlit dashboard."""
-
-import hashlib
 import json
 import subprocess
 import sys
@@ -17,7 +14,7 @@ REPORTS_DIR = PROJECT_DIR / "reports"
 
 sys.path.insert(0, str(SRC_DIR))
 
-import run_investigation as engine  # noqa: E402
+import run_investigation as engine
 
 
 st.set_page_config(
@@ -32,18 +29,40 @@ st.caption(
 )
 
 st.write(
-    "Investigate data quality problems, examine evidence, "
-    "evaluate possible causes, and verify saved investigation results."
+    "Investigate data quality problems using diagnostics, "
+    "evidence-based hypotheses, replay verification, and comparison."
 )
 
-# ---------------------------------------------------------
-# Investigation
-# ---------------------------------------------------------
 
-st.header("1. Run an Investigation")
+def load_json(path: Path):
+    """Load a JSON file, returning None when it is unavailable."""
+    if not path.exists():
+        return None
+
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def display_json_download(data, filename: str, label: str):
+    """Display a download button for JSON data."""
+    if data is not None:
+        st.download_button(
+            label=label,
+            data=json.dumps(data, indent=2, default=str),
+            file_name=filename,
+            mime="application/json",
+        )
+
+
+st.header("1. Choose a CSV file")
+
+sample_path = DATA_DIR / "quality_test.csv"
 
 use_sample = st.checkbox(
-    "Use the sample quality_test.csv",
+    "Use the sample quality_test.csv file",
     value=True,
 )
 
@@ -55,150 +74,126 @@ if not use_sample:
         type=["csv"],
     )
 
-if st.button("Run Investigation", type="primary"):
+if use_sample:
+    if sample_path.exists():
+        st.success(f"Sample file ready: {sample_path.name}")
+    else:
+        st.error(f"Sample file not found: {sample_path}")
+elif uploaded_file is not None:
+    st.success(f"Uploaded file: {uploaded_file.name}")
+else:
+    st.info("Upload a CSV file to begin.")
+
+st.divider()
+st.header("2. Run Investigation")
+
+if st.button("🔍 Run Investigation", type="primary"):
+    input_path = None
+
     try:
         if use_sample:
-            csv_path = DATA_DIR / "quality_test.csv"
-
-            if not csv_path.exists():
-                st.error(f"Sample CSV not found: {csv_path}")
+            if not sample_path.exists():
+                st.error("The sample CSV file does not exist.")
                 st.stop()
 
-            csv_bytes = csv_path.read_bytes()
+            input_path = sample_path
+            report = engine.investigate_csv(str(input_path))
+
         else:
             if uploaded_file is None:
                 st.warning("Please upload a CSV file first.")
                 st.stop()
 
-            csv_bytes = uploaded_file.getvalue()
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                suffix=".csv",
+                delete=False,
+            ) as temp_file:
+                temp_file.write(uploaded_file.getvalue())
+                input_path = Path(temp_file.name)
 
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            suffix=".csv",
-            delete=False,
-        ) as temp_file:
-            temp_file.write(csv_bytes)
-            temp_path = Path(temp_file.name)
+            report = engine.investigate_csv(str(input_path))
 
-        try:
-            report = engine.investigate_csv(str(temp_path))
-            hypotheses = engine.build_hypotheses(report)
-            assessments = engine.investigate_hypotheses(
-                hypotheses,
-                report,
-            )
+        hypotheses = engine.build_hypotheses(report)
 
-            st.session_state["investigation_report"] = report
-            st.session_state["investigation_assessments"] = assessments
-            st.session_state["investigation_input_sha256"] = (
-                hashlib.sha256(csv_bytes).hexdigest()
-            )
+        assessments = engine.investigate_hypotheses(hypotheses)
 
-            st.success("Investigation completed successfully.")
-        finally:
-            temp_path.unlink(missing_ok=True)
+        st.session_state["investigation_report"] = report
+        st.session_state["investigation_hypotheses"] = hypotheses
+        st.session_state["investigation_assessments"] = assessments
+
+        st.success("Investigation completed successfully.")
 
     except Exception as exc:
         st.error(f"Investigation failed: {exc}")
 
+    finally:
+        if (
+            input_path is not None
+            and input_path != sample_path
+            and input_path.exists()
+        ):
+            try:
+                input_path.unlink()
+            except OSError:
+                pass
+
+
 report = st.session_state.get("investigation_report")
+hypotheses = st.session_state.get("investigation_hypotheses")
 assessments = st.session_state.get("investigation_assessments")
 
-if report:
-    st.header("2. Investigation Results")
+if report is not None:
+    st.divider()
+    st.header("3. Investigation Results")
 
-    if isinstance(report, dict):
-        st.subheader("Investigation Summary")
-
-        summary = report.get("summary", {})
-        if isinstance(summary, dict) and summary:
-            columns = st.columns(min(len(summary), 4))
-            for index, (key, value) in enumerate(summary.items()):
-                with columns[index % len(columns)]:
-                    st.metric(
-                        key.replace("_", " ").title(),
-                        str(value),
-                    )
-
-        st.subheader("Evidence Report")
-        st.json(report)
-
-    else:
-        st.write(report)
-
-    if assessments is not None:
-        st.subheader("Root-Cause Hypotheses")
-
-        st.info(
-            "A hypothesis is not a confirmed root cause. "
-            "Review supporting evidence, contradicting evidence, "
-            "and evidence that is still missing."
-        )
-
-        if isinstance(assessments, dict):
-            assessment_items = assessments.items()
-        elif isinstance(assessments, list):
-            assessment_items = [
-                (f"Hypothesis {index + 1}", item)
-                for index, item in enumerate(assessments)
-            ]
-        else:
-            assessment_items = []
-
-        for name, assessment in assessment_items:
-            with st.expander(str(name), expanded=True):
-                if isinstance(assessment, dict):
-                    st.json(assessment)
-                else:
-                    st.write(assessment)
-
-    report_bytes = json.dumps(
-        report,
-        indent=2,
-        default=str,
-    ).encode("utf-8")
+    st.subheader("Diagnostic Report")
+    st.json(report)
 
     st.download_button(
-        "Download Investigation Report (JSON)",
-        data=report_bytes,
+        label="Download Investigation Report",
+        data=json.dumps(report, indent=2, default=str),
         file_name="investigation_report.json",
         mime="application/json",
     )
 
-    if assessments is not None:
-        assessments_bytes = json.dumps(
-            assessments,
-            indent=2,
-            default=str,
-        ).encode("utf-8")
+    if hypotheses is not None:
+        st.subheader("Root-Cause Hypotheses")
+        st.json(hypotheses)
 
-        st.download_button(
-            "Download Hypothesis Assessments (JSON)",
-            data=assessments_bytes,
-            file_name="hypothesis_assessments.json",
-            mime="application/json",
+        display_json_download(
+            hypotheses,
+            "investigation_hypotheses.json",
+            "Download Hypotheses",
         )
 
-# ---------------------------------------------------------
-# Replay Verification
-# ---------------------------------------------------------
+    if assessments is not None:
+        st.subheader("Hypothesis Assessments")
+        st.json(assessments)
+
+        display_json_download(
+            assessments,
+            "hypothesis_assessments.json",
+            "Download Hypothesis Assessments",
+        )
+
 
 st.divider()
-st.header("3. Replay Verification")
+st.header("4. Replay Verification")
 
 st.write(
-    "Verify that the saved replay record matches the original input "
-    "and that the input has not changed."
+    "Verify whether a saved replay record matches the original input data."
 )
 
 replay_path = REPORTS_DIR / "quality_test_replay.json"
-sample_path = DATA_DIR / "quality_test.csv"
 
-if st.button("Verify Saved Replay"):
+if st.button("✅ Verify Replay"):
     if not replay_path.exists():
-        st.error(f"Replay record not found: {replay_path}")
+        st.warning(
+            "Replay record not found. Run an investigation first."
+        )
     elif not sample_path.exists():
-        st.error(f"Sample CSV not found: {sample_path}")
+        st.error("The sample CSV file was not found.")
     else:
         try:
             result = subprocess.run(
@@ -212,123 +207,104 @@ if st.button("Verify Saved Replay"):
                 capture_output=True,
                 text=True,
                 timeout=60,
-                check=False,
             )
 
-            output = (result.stdout or "") + (result.stderr or "")
-            st.code(output or "No output returned.")
-
-            if result.returncode == 0 and "MATCH" in output:
+            if result.returncode == 0:
                 st.success("Replay verification completed.")
             else:
-                st.warning(
-                    "Replay verification did not report a successful MATCH. "
-                    "Review the output above."
-                )
+                st.error("Replay verification reported an error.")
 
-        except Exception as exc:
+            if result.stdout:
+                st.code(result.stdout, language="text")
+
+            if result.stderr:
+                st.code(result.stderr, language="text")
+
+        except (OSError, subprocess.TimeoutExpired) as exc:
             st.error(f"Replay verification failed: {exc}")
 
-# ---------------------------------------------------------
-# Replay Comparison
-# ---------------------------------------------------------
 
 st.divider()
-st.header("4. Replay Comparison")
+st.header("5. Replay Comparison")
 
 st.write(
     "Compare the original investigation with a replay run to identify "
-    "diagnostic changes."
+    "which diagnostic checks changed."
 )
 
 comparison_path = REPORTS_DIR / "replay_comparison.json"
+comparison = load_json(comparison_path)
 
-if st.button("Refresh Replay Comparison"):
-    st.rerun()
-
-if comparison_path.exists():
-    try:
-        with comparison_path.open("r", encoding="utf-8") as file:
-            comparison = json.load(file)
-
-        # IMPORTANT: summary metrics are nested under "summary".
-        summary = comparison.get("summary", {})
-
-        checks_compared = summary.get("checks_compared", 0)
-        checks_changed = summary.get("checks_changed", 0)
-        checks_unchanged = summary.get("checks_unchanged", 0)
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric("Checks Compared", checks_compared)
-        col2.metric("Checks Changed", checks_changed)
-        col3.metric("Checks Unchanged", checks_unchanged)
-
-        st.subheader("Comparison Details")
-
-        input_matches = comparison.get("input_matches_original")
-        if input_matches is True:
-            st.success("Replay input matches the original input.")
-        elif input_matches is False:
-            st.warning("Replay input differs from the original input.")
-        else:
-            st.info("Input-match status is not available.")
-
-        st.write(
-            comparison.get(
-                "comparison_note",
-                "No comparison note available.",
-            )
-        )
-
-        # IMPORTANT: individual checks are nested under "diagnostics".
-        diagnostics = comparison.get("diagnostics", {})
-
-        if diagnostics:
-            for check_name, details in diagnostics.items():
-                with st.expander(
-                    check_name.replace("_", " ").title()
-                ):
-                    if isinstance(details, dict):
-                        status = details.get("status", "unknown")
-
-                        if status == "unchanged":
-                            st.success("Status: Unchanged")
-                        elif status == "changed":
-                            st.warning("Status: Changed")
-                        else:
-                            st.info(f"Status: {status}")
-
-                        st.json(details)
-                    else:
-                        st.write(details)
-        else:
-            st.warning(
-                "No diagnostic entries were found under "
-                "'diagnostics' in the comparison JSON."
-            )
-
-        st.download_button(
-            "Download Replay Comparison (JSON)",
-            data=json.dumps(
-                comparison,
-                indent=2,
-                default=str,
-            ),
-            file_name="replay_comparison.json",
-            mime="application/json",
-        )
-
-    except (json.JSONDecodeError, OSError) as exc:
-        st.error(f"Could not read the comparison JSON: {exc}")
+if comparison is None:
+    st.info(
+        "No comparison report found. Run the replay comparison command "
+        "in the terminal to generate one."
+    )
 else:
-    st.warning(
-        "Comparison report not found. Run the replay comparison command "
-        "in your terminal first."
+    summary = comparison.get("summary", {})
+    diagnostics = comparison.get("diagnostics", {})
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric(
+        "Checks Compared",
+        summary.get("checks_compared", 0),
     )
-    st.code(
-        r".\.venv\Scripts\python.exe -m src.replay_comparison "
-        r"reports\quality_test_investigation.json "
-        r"reports\quality_test_replay_run.json",
-        language="powershell",
+    col2.metric(
+        "Checks Changed",
+        summary.get("checks_changed", 0),
     )
+    col3.metric(
+        "Checks Unchanged",
+        summary.get("checks_unchanged", 0),
+    )
+
+    if summary.get("checks_changed", 0) == 0:
+        st.success("All compared diagnostic checks remain unchanged.")
+    else:
+        st.warning("Some diagnostic checks have changed.")
+
+    comparison_note = comparison.get("comparison_note")
+    if comparison_note:
+        st.info(comparison_note)
+
+    st.subheader("Individual Check Results")
+
+    if diagnostics:
+        for check_name, details in diagnostics.items():
+            status = details.get("status", "unknown")
+            changed_fields = details.get("changed_fields", {})
+            time_sensitive = details.get(
+                "time_sensitive_values_changed",
+                False,
+            )
+
+            with st.expander(
+                f"{check_name.replace('_', ' ').title()} — {status.title()}"
+            ):
+                st.write(f"**Status:** {status}")
+
+                if changed_fields:
+                    st.write("**Changed fields:**")
+                    st.json(changed_fields)
+                else:
+                    st.write("No diagnostic field changes recorded.")
+
+                st.write(
+                    "**Time-sensitive values changed:** "
+                    f"{'Yes' if time_sensitive else 'No'}"
+                )
+    else:
+        st.info("No individual diagnostic results are available.")
+
+    st.download_button(
+        label="Download Full Comparison Report",
+        data=json.dumps(comparison, indent=2, default=str),
+        file_name="replay_comparison.json",
+        mime="application/json",
+    )
+
+st.divider()
+st.caption(
+    "DataContract Detective | Evidence-driven data pipeline investigation"
+)

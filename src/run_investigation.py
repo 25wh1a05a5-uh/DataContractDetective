@@ -6,12 +6,17 @@ import sys
 from pathlib import Path
 
 from csv_loader import load_csv
+from bedrock_summary import summarize_with_bedrock
 from diagnostics import (
     check_duplicates,
     check_freshness,
     compare_schema,
     check_missing_values,
     check_numeric_range,
+)
+from decider import (
+    choose_next_diagnostic_action,
+    execute_selected_diagnostic,
 )
 from investigator import investigate_hypotheses
 from replay_record import create_replay_record, save_replay_record
@@ -98,14 +103,21 @@ def investigate_csv(file_path):
             ),
         })
 
-    return {
+    decision = choose_next_diagnostic_action({"diagnostics": diagnostics})
+    follow_up = execute_selected_diagnostic(data, decision)
+
+    report = {
         "file_name": loaded["file_name"],
         "row_count": loaded["row_count"],
         "columns": loaded["columns"],
         "findings": findings,
         "diagnostics": diagnostics,
         "evidence_ledger": evidence_ledger,
+        "next_diagnostic_action": decision,
+        "follow_up_diagnostic": follow_up,
     }
+    report["bedrock_summary"] = summarize_with_bedrock(report)
+    return report
 
 
 def build_hypotheses(csv_report):
@@ -204,6 +216,49 @@ def build_markdown_report(report):
             )
     else:
         lines.append("- No configured data-quality issues detected.")
+
+    action = csv_report.get("next_diagnostic_action", {})
+    lines.extend([
+        "",
+        "### Adaptive follow-up decision",
+        "",
+    ])
+    if action.get("tool_name"):
+        lines.extend([
+            f"- Selected tool: {action['tool_name']}",
+            f"- Decision source: {action.get('source', 'unknown')}",
+            "- Evidence basis: "
+            f"{action.get('evidence_basis') or action.get('reason', 'Not provided.')}",
+        ])
+        if action.get("confidence") is not None:
+            lines.append(f"- Decider confidence: {action['confidence']}")
+        follow_up = csv_report.get("follow_up_diagnostic")
+        if follow_up:
+            result = follow_up.get("result", {})
+            lines.append(
+                f"- Follow-up execution: {follow_up.get('status', 'unknown')}"
+            )
+            lines.append(
+                f"- Follow-up evidence: {result.get('evidence', 'Not available.')}"
+            )
+    else:
+        lines.append(action.get("reason", "No follow-up action was selected."))
+
+    bedrock = csv_report.get("bedrock_summary", {})
+    if bedrock.get("status") == "completed":
+        lines.extend([
+            "",
+            "### Amazon Bedrock summary",
+            "",
+            bedrock["text"],
+        ])
+    elif bedrock.get("status") == "failed":
+        lines.extend([
+            "",
+            "### Amazon Bedrock summary",
+            "",
+            f"Summary unavailable: {bedrock.get('error', 'Unknown error.')}",
+        ])
 
     diagnostics = csv_report["diagnostics"]
     freshness = diagnostics["freshness"]
@@ -444,7 +499,13 @@ def main():
         print(f"Conclusion: {report['conclusion']}")
         print(f"Root cause confirmed: {report['root_cause_confirmed']}")
 
-    except (FileNotFoundError, ValueError, TypeError, OSError) as error:
+    except (
+        FileNotFoundError,
+        ValueError,
+        TypeError,
+        OSError,
+        RuntimeError,
+    ) as error:
         print(f"Investigation failed: {error}")
         sys.exit(1)
 
